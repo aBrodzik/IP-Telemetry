@@ -1,0 +1,115 @@
+# file: srlinux.clab.yml
+# by Adam
+name: telemetry     
+
+mgmt:
+  ipv4_subnet: 1.1.1.0/24
+
+topology:
+  defaults:
+    kind: srl
+    
+  kinds:
+   srl:
+    image: ghcr.io/nokia/srlinux
+ 
+  nodes:
+   R11:
+     type: ixrd2
+   R12:
+     type: ixrd2
+   R13:
+     type: ixrd2
+   R14:
+     type: ixrd2
+   R21:
+     type: ixrd2
+   R22:
+     type: ixrd2
+   R31:
+     type: ixrd2
+   R32:
+     type: ixrd2
+
+
+   C1:
+    kind: linux
+    image: alpine/iperf
+    exec:
+     - ip addr add 192.168.11.2/24 dev eth1
+     - ip route add 192.0.0.0/8 via 192.168.11.1
+   C2:
+    kind: linux
+    image: alpine/iperf
+    exec:
+     - ip addr add 192.168.22.2/24 dev eth1
+     - ip route add 192.0.0.0/8 via 192.168.22.1
+   C3:
+    kind: linux
+    image: alpine/iperf
+    exec:
+     - ip addr add 192.168.33.2/24 dev eth1
+     - ip route add 192.0.0.0/8 via 192.168.33.1
+
+
+
+   gnmic:
+    kind: linux
+    image: gnmic/gnmic
+    binds:
+     - ./gnmic.yaml:/app/gnmic.yaml:ro
+     - /var/run/docker.sock:/var/run/docker.sock
+    cmd: '--config /app/gnmic.yaml --log subscribe' 
+ 
+   consul-agent:
+    kind: linux
+    image: consul:latest
+    ports:
+     - 8500:8500
+     - 8600:8600/udp
+    cmd: 'agent -server -ui -bind=127.0.0.1 -node=server-1 -bootstrap-expect=1 -client=0.0.0.0'
+    
+   prometheus:
+    kind: linux
+    image: prom/prometheus
+    user: 65534:65534
+    binds:
+        - ./prometheus/:/etc/prometheus/
+    ports:
+     - 9090:9090
+    cmd: |
+        --config.file=/etc/prometheus/prometheus.yaml
+        --web.console.libraries=/usr/share/prometheus/console_libraries
+        --web.console.templates=/usr/share/prometheus/consoles
+        --log.level=debug
+   
+   grafana:
+     kind: linux
+     image: grafana/grafana-enterprise
+     ports:
+      - 3000:3000
+     binds:
+        - grafana/datasources/datasource.yaml:/etc/grafana/provisioning/datasources/datasource.yaml:ro
+        - grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+        - grafana/grafana-flowcharting:/var/lib/grafana/plugins/grafana-flowcharting
+        - grafana/dashboards:/var/lib/grafana/dashboards
+    
+  links:
+    # Między routerami AS1
+    - endpoints: ["R11:e1-2", "R12:e1-1"]
+    - endpoints: ["R11:e1-4", "R14:e1-1"]
+    - endpoints: ["R12:e1-3", "R13:e1-2"]
+    - endpoints: ["R13:e1-4", "R14:e1-3"]
+    - endpoints: ["R14:e1-2", "R12:e1-4"]
+    # Między routerami AS2
+    - endpoints: ["R21:e1-2", "R22:e1-1"]
+    # Między routerami AS3
+    - endpoints: ["R31:e1-2", "R32:e1-1"]
+    # Między AS
+    - endpoints: ["R11:e1-21", "R21:e1-11"]
+    - endpoints: ["R12:e1-32", "R31:e1-13"]
+    # Do klientów
+    - endpoints: ["C1:eth1", "R14:e1-49"]
+    - endpoints: ["C2:eth1", "R22:e1-49"]
+    - endpoints: ["C3:eth1", "R32:e1-49"]
+
